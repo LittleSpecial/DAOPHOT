@@ -1,0 +1,11 @@
+# 复眼光斑检测器依赖
+# 安装命令: pip install -r requirements.txt
+
+# 核心依赖
+numpy>=1.20.0
+scipy>=1.7.0
+pillow>=8.0.0
+matplotlib>=3.4.0
+
+# 可选: GPU加速 (需要CUDA)
+# torch>=2.0.0

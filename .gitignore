@@ -1,0 +1,20 @@
+# 检测结果图片
+detection_output/
+*_results/
+
+# 大图像文件（只保留20260127-38mm）
+2026.0120/
+焦距35mm,物距57.2cm1/
+
+# PDF文件
+*.pdf
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# IDE
+.vscode/
+.idea/
