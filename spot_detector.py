@@ -212,7 +212,7 @@ def fit_1_gaussian(region):
         return model.ravel() - data
     
     try:
-        result = least_squares(residual, p0, bounds=(bounds_lo, bounds_hi), max_nfev=100)
+        result = least_squares(residual, p0, bounds=(bounds_lo, bounds_hi), max_nfev=200)
         rss = np.sum(result.fun**2)
         n_pix = h * w
         bic = n_pix * np.log(rss / n_pix + 1e-10) + 5 * np.log(n_pix)
@@ -263,16 +263,19 @@ def fit_2_gaussians(region):
     # 沿主轴偏移生成两个初始点
     offset = max(major_sigma * 0.5, 10)
     
-    # 沿主轴方向的初始值（只尝试一组，速度优先）
-    cy1 = cy_cm + offset * major_dir[1]
-    cx1 = cx_cm + offset * major_dir[0]
-    cy2 = cy_cm - offset * major_dir[1]
-    cx2 = cx_cm - offset * major_dir[0]
+    # 多组初始值
+    init_configs = [
+        # 沿主轴方向
+        (cy_cm + offset * major_dir[1], cx_cm + offset * major_dir[0],
+         cy_cm - offset * major_dir[1], cx_cm - offset * major_dir[0]),
+        # 沿水平方向
+        (cy_cm, cx_cm - offset, cy_cm, cx_cm + offset),
+        # 沿垂直方向
+        (cy_cm - offset, cx_cm, cy_cm + offset, cx_cm),
+    ]
     
     bounds_lo = [0,  0, 0, 0, 2,  0, 0, 0, 2]
     bounds_hi = [300, 500, h, w, 50, 500, h, w, 50]
-    
-    init_configs = [(cy1, cx1, cy2, cx2)]
     
     best_result = None
     best_bic = float('inf')
@@ -296,7 +299,7 @@ def fit_2_gaussians(region):
             return model.ravel() - data
         
         try:
-            result = least_squares(residual, p0, bounds=(bounds_lo, bounds_hi), max_nfev=150)
+            result = least_squares(residual, p0, bounds=(bounds_lo, bounds_hi), max_nfev=200)
             rss = np.sum(result.fun**2)
             n_pix = h * w
             bic = n_pix * np.log(rss / n_pix + 1e-10) + 9 * np.log(n_pix)
@@ -334,10 +337,8 @@ def analyze_lenslet(region, sigma_init=12):
     """
     分析单个子眼区域：判断是1个还是2个光斑。
     
-    策略：
-    1. 先快速检查形状
-    2. 如果形状规则(圆形) → 直接单高斯质心
-    3. 如果形状拉长 → 比较1高斯和2高斯的BIC
+    对每个子眼都做1高斯 vs 2高斯的BIC比较，
+    选择更优的模型。
     
     Returns:
         spots: [{'y', 'x', 'amplitude', 'sigma'}, ...]
@@ -348,35 +349,14 @@ def analyze_lenslet(region, sigma_init=12):
     if region.max() - bg < 20:
         return [], 0, 'skip'
     
-    # 裁剪到光斑附近80x80区域（加速拟合）
-    h, w = region.shape
-    sub = np.maximum(region.astype(np.float64) - bg, 0)
-    peak_y, peak_x = np.unravel_index(np.argmax(sub), sub.shape)
+    # 对全区域做BIC比较（1高斯 vs 2高斯）
+    spots_1, bic_1 = fit_1_gaussian(region)
+    spots_2, bic_2 = fit_2_gaussians(region)
     
-    crop_half = 40
-    cy0 = max(crop_half, min(h - crop_half, peak_y))
-    cx0 = max(crop_half, min(w - crop_half, peak_x))
-    crop = region[cy0 - crop_half:cy0 + crop_half, cx0 - crop_half:cx0 + crop_half]
-    
-    # 记录裁剪偏移量
-    offset_y = cy0 - crop_half
-    offset_x = cx0 - crop_half
-    
-    # 对裁剪区域做BIC比较（1高斯 vs 2高斯）
-    spots_1, bic_1 = fit_1_gaussian(crop)
-    spots_2, bic_2 = fit_2_gaussians(crop)
-    
-    # BIC判断：delta越大说明2高斯越好
-    if len(spots_2) == 2 and bic_2 < bic_1 - 50:
-        # 坐标加上偏移
-        for s in spots_2:
-            s['y'] += offset_y
-            s['x'] += offset_x
+    # BIC判断：2高斯要明显更好才选择
+    if len(spots_2) == 2 and bic_2 < bic_1 - 20:
         return spots_2, 2, 'double'
     else:
-        for s in spots_1:
-            s['y'] += offset_y
-            s['x'] += offset_x
         return spots_1, 1, 'single'
 
 
